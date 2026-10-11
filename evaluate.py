@@ -7,14 +7,16 @@ Example
     python evaluate.py --runs cnn_baseline mnv3_basic --gallery-run mnv3_basic
 """
 import argparse
+import io
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from torch.utils.data import DataLoader
+from torchvision import transforms
 from sklearn.metrics import precision_recall_curve
 
 import matplotlib
@@ -58,7 +60,7 @@ def gallery(df, root, kind, out_png, n=12, cols=4):
     sub = df[df["error"] == kind]
     if kind == "FP":
         sub = sub.sort_values("prob_fire", ascending=False)     # most confident errors
-    else:
+    elif kind == "FN":
         sub = sub.sort_values("prob_fire", ascending=True)
     sub = sub.head(n)
     if sub.empty:
@@ -73,9 +75,89 @@ def gallery(df, root, kind, out_png, n=12, cols=4):
             ax.imshow(im.convert("RGB"))
         ax.set_title(f'{Path(r["path"]).name}\nP(fire)={r["prob_fire"]:.2f}', fontsize=8)
     fig.suptitle({"FP": "False positives (no fire predicted as fire)",
-                  "FN": "False negatives (missed fire)"}[kind])
+                  "FN": "False negatives (missed fire)",
+                  "HC": "Hard cases: correct predictions closest to the threshold"}[kind])
     fig.tight_layout(); fig.savefig(out_png, dpi=130); plt.close(fig)
     return len(sub)
+
+
+
+# ----------------------------------------------------------------------------
+# robustness: controlled perturbations of the SAME locked test images.
+# Nothing here is used for training or tuning; thresholds stay at the values
+# fixed on validation.
+# ----------------------------------------------------------------------------
+def _brightness(f):
+    return lambda im: ImageEnhance.Brightness(im).enhance(f)
+
+
+def _blur(r):
+    return lambda im: im.filter(ImageFilter.GaussianBlur(r)) if r > 0 else im
+
+
+def _lowres(s):
+    def fn(im):
+        if s >= 1:
+            return im
+        w, h = im.size
+        small = im.resize((max(8, int(w * s)), max(8, int(h * s))), Image.BILINEAR)
+        return small.resize((w, h), Image.BILINEAR)
+    return fn
+
+
+def _jpeg(q):
+    def fn(im):
+        if q is None:
+            return im
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=q)
+        buf.seek(0)
+        return Image.open(buf).convert("RGB")
+    return fn
+
+
+PERTURBATIONS = {
+    "brightness factor": [(1.0, _brightness(1.0)), (0.4, _brightness(0.4)), (0.6, _brightness(0.6)),
+                          (1.4, _brightness(1.4)), (1.8, _brightness(1.8))],
+    "gaussian blur radius": [(0, _blur(0)), (1, _blur(1)), (2, _blur(2)), (4, _blur(4))],
+    "resolution scale": [(1.0, _lowres(1.0)), (0.5, _lowres(0.5)), (0.25, _lowres(0.25)),
+                         (0.125, _lowres(0.125))],
+    "JPEG quality": [(100, _jpeg(None)), (50, _jpeg(50)), (20, _jpeg(20)), (8, _jpeg(8))],
+}
+
+
+def run_robustness(store, models, args, device, out):
+    rows = []
+    for fam, levels in PERTURBATIONS.items():
+        for lvl, fn in levels:
+            tf = transforms.Compose([transforms.Lambda(fn), make_transforms(False)])
+            dsr = FireDataset(Path(args.splits) / "test.csv", args.data_root, tf)
+            dlr = DataLoader(dsr, 32, shuffle=False, num_workers=args.workers)
+            for name, model in models.items():
+                p, y = predict_probs(model, dlr, device)
+                m = binary_metrics(y, p, store[name][2])
+                rows.append({"perturbation": fam, "level": lvl, "model": name,
+                             "fire_recall": m["fire_recall"], "fire_precision": m["fire_precision"],
+                             "fire_f1": m["fire_f1"], "accuracy": m["accuracy"],
+                             "FN": m["fn"], "FP": m["fp"]})
+        print("robustness done:", fam)
+    df = pd.DataFrame(rows)
+    df.to_csv(out / "robustness.csv", index=False)
+    fig, axes = plt.subplots(2, 4, figsize=(15, 6.2))
+    for j, (fam, _) in enumerate(PERTURBATIONS.items()):
+        sub = df[df.perturbation == fam]
+        for i, (metric, lab) in enumerate((("fire_recall", "fire recall"),
+                                           ("fire_precision", "fire precision"))):
+            ax = axes[i, j]
+            for name in models:
+                s2 = sub[sub.model == name].sort_values("level")
+                ax.plot(range(len(s2)), s2[metric], marker="o", label=name)
+            ax.set_xticks(range(len(s2))); ax.set_xticklabels([str(v) for v in s2.level], fontsize=8)
+            ax.set_ylim(0, 1.02); ax.set_title(fam, fontsize=9)
+            ax.set_ylabel(lab); ax.set_xlabel("level (left = least / clean)", fontsize=7)
+    axes[0, 0].legend(fontsize=7)
+    fig.tight_layout(); fig.savefig(out / "figures/robustness.png", dpi=130); plt.close(fig)
+    return df
 
 
 def main():
@@ -87,6 +169,8 @@ def main():
     ap.add_argument("--out", default="results")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--n-boot", type=int, default=2000)
+    ap.add_argument("--robustness", action="store_true",
+                    help="also evaluate under controlled brightness/blur/resolution/JPEG changes")
     args = ap.parse_args()
 
     device = get_device()
@@ -95,7 +179,7 @@ def main():
     dl = DataLoader(ds, 32, shuffle=False, num_workers=args.workers)
     print(f"test images: {len(ds)}")
 
-    rows, store = [], {}
+    rows, store, models = [], {}, {}
     for name in args.runs:
         run = Path("runs") / name
         cfg = json.loads((run / "config.json").read_text())
@@ -105,6 +189,7 @@ def main():
         p, y = predict_probs(model, dl, device)
         thr = cfg["val_threshold"]
         store[name] = (p, y, thr, cfg)
+        models[name] = model
 
         pred_df = ds.df[["path", "label"]].copy()
         pred_df["prob_fire"] = p
@@ -151,6 +236,16 @@ def main():
     nfp = gallery(df, args.data_root, "FP", out / "figures/false_positives.png")
     nfn = gallery(df, args.data_root, "FN", out / "figures/false_negatives.png")
     print(f"\nerror gallery for '{g}': {nfp} FP and {nfn} FN images shown")
+
+    # hard cases: correct predictions closest to the decision threshold
+    thr_g = store[g][2]
+    df["margin"] = (df["prob_fire"] - thr_g).abs()
+    hc = df[df["error"] == ""].sort_values("margin").head(12).copy()
+    hc["error"] = "HC"
+    gallery(hc, args.data_root, "HC", out / "figures/hard_cases.png")
+
+    if args.robustness:
+        run_robustness(store, models, args, device, out)
     print("results written to", out.resolve())
 
 
