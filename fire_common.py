@@ -154,10 +154,12 @@ def binary_metrics(y, p, thr):
             "tn": tn, "fp": fp, "fn": fn, "tp": tp}
 
 
-def choose_threshold(y, p, target_recall=0.95):
+def choose_threshold(y, p, target_recall=0.95, max_thr=0.5):
     """Pick the decision threshold ON VALIDATION DATA ONLY.
-    Returns the highest threshold whose fire recall >= target_recall
-    (fewest false alarms subject to the recall target)."""
+    Takes the highest threshold whose fire recall >= target_recall, but never
+    stricter than max_thr (0.5): when validation scores are saturated that rule
+    can pick an extreme threshold (e.g. 0.97) that is fragile on unseen data and
+    would trade away fire recall for no benefit."""
     order = np.argsort(-p)
     ys, ps = y[order], p[order]
     tp = np.cumsum(ys == 1)
@@ -167,4 +169,4 @@ def choose_threshold(y, p, target_recall=0.95):
         return 0.5
     k = ok[0]
     # threshold just at the probability of the k-th ranked sample
-    return float(ps[k])
+    return float(min(ps[k], max_thr))

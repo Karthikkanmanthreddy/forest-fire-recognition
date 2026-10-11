@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--aug", default="basic", choices=["none", "basic", "strong"])
     ap.add_argument("--patience", type=int, default=6)
+    ap.add_argument("--select-by", default="val_loss", choices=["val_loss", "ap"],
+                    help="validation criterion for choosing the epoch (AP saturates at 1.0)")
     ap.add_argument("--target-recall", type=float, default=0.95)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--workers", type=int, default=2)
@@ -88,7 +90,7 @@ def main():
     frozen = pretrained and args.freeze_epochs > 0
     opt = make_opt(frozen)
 
-    hist, best_ap, best_ep, bad = [], -1.0, -1, 0
+    hist, best_score, best_ap, best_ep, bad = [], -1e9, -1.0, -1, 0
     t0 = time.time()
     for ep in range(1, args.epochs + 1):
         if frozen and ep > args.freeze_epochs:
@@ -115,8 +117,9 @@ def main():
                      "phase": "head" if frozen else "full"})
         print(f"ep {ep:02d} | train_loss {tl/n:.4f} | val_loss {vl:.4f} | "
               f"val_acc {m['accuracy']:.3f} | val_f1 {m['fire_f1']:.3f} | val_AP {ap_val:.3f}")
-        if ap_val > best_ap:                        # model selection: validation AP
-            best_ap, best_ep, bad = ap_val, ep, 0
+        score = -vl if args.select_by == "val_loss" else ap_val   # higher is better
+        if score > best_score + 1e-9:               # model selection: validation only
+            best_score, best_ap, best_ep, bad = score, ap_val, ep, 0
             torch.save(model.state_dict(), out / "best.pt")
         else:
             bad += 1
@@ -132,7 +135,7 @@ def main():
     np.save(out / "val_probs.npy", pv)
     pd.DataFrame(hist).to_csv(out / "history.csv", index=False)
 
-    cfg = vars(args) | {"best_epoch": best_ep, "best_val_ap": best_ap,
+    cfg = vars(args) | {"best_epoch": best_ep, "best_val_ap": best_ap, "select_by": args.select_by,
                         "val_threshold": thr, "n_params": n_params,
                         "train_minutes": (time.time() - t0) / 60, "device": str(device),
                         "val_metrics_at_0.5": val_at_05, "val_metrics_at_val_thr": val_at_thr}
