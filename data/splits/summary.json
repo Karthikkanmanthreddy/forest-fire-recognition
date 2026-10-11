@@ -1,0 +1,29 @@
+{
+  "seed": 42,
+  "val_frac": 0.15,
+  "hash_thresh": 4,
+  "n_found": 1900,
+  "n_unreadable": 0,
+  "n_removed": 9,
+  "removed_by_reason": {
+    "duplicate_within_trainval": 8,
+    "duplicate_of_test_image": 1
+  },
+  "image_sizes": {
+    "250x250": 1900
+  },
+  "split_counts": {
+    "train": {
+      "fire": 648,
+      "nofire": 647
+    },
+    "val": {
+      "nofire": 108,
+      "fire": 108
+    },
+    "test": {
+      "nofire": 190,
+      "fire": 190
+    }
+  }
+}

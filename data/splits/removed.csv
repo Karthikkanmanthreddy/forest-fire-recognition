@@ -1,0 +1,10 @@
+path,label,orig_split,cluster_id,removed_reason,label_name
+Training and Validation/nofire/nofire_0336.jpg,0.0,trainval,711.0,duplicate_within_trainval,
+Training and Validation/nofire/nofire_0463.jpg,0.0,trainval,840.0,duplicate_within_trainval,
+Training and Validation/nofire/nofire_0548.jpg,0.0,trainval,899.0,duplicate_within_trainval,
+Training and Validation/nofire/nofire_0562.jpg,0.0,trainval,931.0,duplicate_within_trainval,
+Training and Validation/nofire/nofire_0602.jpg,0.0,trainval,149.0,duplicate_of_test_image,
+Training and Validation/fire/fire_0334.jpg,1.0,trainval,1463.0,duplicate_within_trainval,
+Training and Validation/fire/fire_0505.jpg,1.0,trainval,1637.0,duplicate_within_trainval,
+Training and Validation/fire/fire_0590.jpg,1.0,trainval,1721.0,duplicate_within_trainval,
+Training and Validation/fire/fire_0623.jpg,1.0,trainval,1477.0,duplicate_within_trainval,
