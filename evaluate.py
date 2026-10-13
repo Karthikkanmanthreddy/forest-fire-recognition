@@ -232,7 +232,7 @@ def main():
 
     # error gallery
     g = args.gallery_run or args.runs[-1]
-    df = pd.read_csv(out / f"test_predictions_{g}.csv")
+    df = pd.read_csv(out / f"test_predictions_{g}.csv", keep_default_na=False)
     nfp = gallery(df, args.data_root, "FP", out / "figures/false_positives.png")
     nfn = gallery(df, args.data_root, "FN", out / "figures/false_negatives.png")
     print(f"\nerror gallery for '{g}': {nfp} FP and {nfn} FN images shown")
