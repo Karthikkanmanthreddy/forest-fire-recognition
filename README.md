@@ -1,10 +1,7 @@
 # Smoke and Fire Recognition in Forest Images
 
-Individual project, Summer 2026 module retake exam.
 **Author:** Karthik Reddy Kanmanthreddy
-**Module:** TODO (write the exact module name from your assignment)
-**Report (Overleaf, view link):** TODO
-**Code demo video:** TODO  |  **Presentation video:** TODO
+
 
 ## Task
 Binary image classification: does a forest image show fire (`fire`) or not (`nofire`)?
