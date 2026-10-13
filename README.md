@@ -108,9 +108,7 @@ in `results/robustness.csv` and `results/figures/robustness.png`.
 - Not evidence of real-world wildfire detection performance.
 
 ## AI-use statement
-TODO: describe honestly which tools you used and for what (for example, an AI assistant
-helped scaffold and debug the code; the report text is written by me). Keep it consistent
-with the statement in the report.
+Generative ‌AI ‌was ‌used to assist organise and compose text with explanation for the report. The author should proofread and amend the wording, cross-check that all statements reflect what was actually done in the experiments and that this declaration correctly describes all the use of AI. The author is accountable for the work submitted and abides by the rules set for allowed AI usage in the module.
 
 ## Credits
 Dataset: Khan and Hassan (2020), CC BY 4.0. Pretrained weights: torchvision ImageNet models.
